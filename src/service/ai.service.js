@@ -1,7 +1,14 @@
 const { GoogleGenAI } = require("@google/genai");
 const { OpenRouter } = require("@openrouter/sdk");
 
-const ai = new GoogleGenAI({});
+let ai;
+
+const getAiClient = () => {
+    if (!ai) {
+        ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY });
+    }
+    return ai;
+};
 
 const client = new OpenRouter({
     apiKey: process.env.OPENROUTER_API_KEY,
@@ -83,7 +90,7 @@ async function generateRecommendation(employees) {
 
 async function generateVector(input) {
     try {
-        const response = await ai.models.embedContent({
+        const response = await getAiClient().models.embedContent({
             model: "gemini-embedding-001",
             contents: [input],
             config: {
