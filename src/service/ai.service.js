@@ -14,6 +14,40 @@ const client = new OpenRouter({
     apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+function buildFallbackRecommendation(employees) {
+    const sorted = Array.isArray(employees)
+        ? [...employees].sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0) || (b.experience || 0) - (a.experience || 0))
+        : [];
+
+    const promotionCandidates = sorted.slice(0, 3).map((e) => ({
+        id: e._id || e.id || null,
+        name: e.name,
+        reason: `Performance score ${e.performanceScore || 0}`,
+    }));
+
+    const ranking = sorted.map((e) => ({
+        id: e._id || e.id || null,
+        name: e.name,
+        score: e.performanceScore || 0,
+        experience: e.experience || 0,
+    }));
+
+    const trainingSuggestions = {};
+    (employees || []).forEach((e) => {
+        const key = e._id || e.id || e.email || e.name;
+        trainingSuggestions[key] = [
+            e.skills && e.skills.includes("Node.js") ? "Advanced Node.js patterns" : "Foundational training",
+        ];
+    });
+
+    return {
+        promotionCandidates,
+        ranking,
+        trainingSuggestions,
+        aiFeedback: "AI provider not configured or unavailable in this environment — returning best-effort local recommendation.",
+    };
+}
+
 async function generateResponse(message) {
     try {
         const response = await client.chat.send({
@@ -40,28 +74,11 @@ async function generateRecommendation(employees) {
 
     // If no AI provider key is configured, return a deterministic mock recommendation
     if (!process.env.OPENROUTER_API_KEY && !process.env.GOOGLE_API_KEY && !process.env.GEMINI_API_KEY) {
-        // simple fallback logic: sort by performanceScore, pick top 3 for promotion
-        const sorted = Array.isArray(employees)
-            ? [...employees].sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0) || (b.experience || 0) - (a.experience || 0))
-            : [];
-        const promotionCandidates = sorted.slice(0, 3).map((e) => ({ id: e._id || e.id || null, name: e.name, reason: `Performance score ${e.performanceScore || 0}` }));
-        const ranking = sorted.map((e) => ({ id: e._id || e.id || null, name: e.name, score: e.performanceScore || 0, experience: e.experience || 0 }));
-        const trainingSuggestions = {};
-        (employees || []).forEach((e) => {
-            trainingSuggestions[e._id || e.id || e.email || e.name] = [
-                e.skills && e.skills.includes("Node.js") ? "Advanced Node.js patterns" : "Foundational training",
-            ];
-        });
-        return {
-            promotionCandidates,
-            ranking,
-            trainingSuggestions,
-            aiFeedback: "AI provider not configured in this environment — returning best-effort local recommendation.",
-        };
+        return buildFallbackRecommendation(employees);
     }
 
     const raw = await generateResponse(prompt);
-    if (!raw) throw new Error("Failed to get recommendation from AI provider");
+    if (!raw) return buildFallbackRecommendation(employees);
 
     // Try to parse JSON response. If it is not strict JSON, attempt to extract JSON block.
     const tryParse = (text) => {
@@ -81,7 +98,8 @@ async function generateRecommendation(employees) {
         }
     };
 
-    const parsed = tryParse(raw);
+    try {
+        const parsed = tryParse(raw);
         // sanitize function: strip HTML tags from strings and recursively apply to objects/arrays
         const stripTags = (s) => {
             if (typeof s !== "string") return s;
@@ -104,10 +122,17 @@ async function generateRecommendation(employees) {
             return value;
         };
 
-        if (parsed) return sanitize(parsed);
+        if (parsed) {
+            const normalized = normalizeRecommendation(parsed, employees);
+            return sanitize(normalized);
+        }
 
-        // Fallback: return sanitized raw text for UI to display
-        return { raw: sanitize(raw) };
+        // Fallback: return deterministic structured recommendation
+        return buildFallbackRecommendation(employees);
+    } catch (error) {
+        console.log("RECOMMENDATION FALLBACK:", error.message);
+        return buildFallbackRecommendation(employees);
+    }
 }
 
 async function generateVector(input) {
@@ -128,3 +153,49 @@ async function generateVector(input) {
 }
 
 module.exports = { generateResponse, generateVector, generateRecommendation };
+
+function normalizeRecommendation(obj, employees) {
+    const out = {};
+
+    // ranking
+    if (Array.isArray(obj.ranking) && obj.ranking.length > 0) {
+        out.ranking = obj.ranking.map((r) => ({
+            id: r.id || r._id || null,
+            name: r.name || "",
+            score: typeof r.score === "number" ? r.score : Number(r.score) || 0,
+            experience: typeof r.experience === "number" ? r.experience : Number(r.experience) || 0,
+        }));
+    } else {
+        out.ranking = (Array.isArray(employees) ? employees : [])
+            .map((e) => ({ id: e._id || e.id || null, name: e.name, score: e.performanceScore || 0, experience: e.experience || 0 }))
+            .sort((a, b) => b.score - a.score || b.experience - a.experience);
+    }
+
+    // promotionCandidates
+    if (Array.isArray(obj.promotionCandidates) && obj.promotionCandidates.length > 0) {
+        out.promotionCandidates = obj.promotionCandidates.slice(0, 3).map((p) => ({ id: p.id || p._id || null, name: p.name || "", reason: p.reason || "" }));
+    } else {
+        out.promotionCandidates = out.ranking.slice(0, 3).map((r) => ({ id: r.id, name: r.name, reason: `Performance score ${r.score}` }));
+    }
+
+    // trainingSuggestions
+    out.trainingSuggestions = {};
+    const suggestionsFromObj = obj.trainingSuggestions || {};
+    if (suggestionsFromObj && typeof suggestionsFromObj === "object") {
+        for (const [k, v] of Object.entries(suggestionsFromObj)) {
+            const key = k;
+            if (Array.isArray(v)) out.trainingSuggestions[key] = v.map(String);
+            else if (typeof v === "string") out.trainingSuggestions[key] = [v];
+        }
+    }
+    (Array.isArray(employees) ? employees : []).forEach((e) => {
+        const key = e._id || e.id || e.email || e.name;
+        if (!out.trainingSuggestions[key]) {
+            out.trainingSuggestions[key] = [e.skills && e.skills.includes("Node.js") ? "Advanced Node.js patterns" : "Foundational training"];
+        }
+    });
+
+    out.aiFeedback = (obj.aiFeedback && String(obj.aiFeedback).trim()) || `Focus on top performers while providing targeted upskilling for others.`;
+
+    return out;
+}
