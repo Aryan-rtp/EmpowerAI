@@ -1,0 +1,20 @@
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Client
+client/node_modules/
+client/dist/
+
+# Production
+.env
+/public/node_modules/
+
+# Editor
+.vscode/
+.DS_Store
+
+# Logs
+logs
+*.log

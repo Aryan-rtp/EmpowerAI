@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: employee-ai
+    env: node
+    plan: free
+    buildCommand: "cd client && npm ci && npm run build && cp -r client/dist/* ../public/"
+    startCommand: "npm start"
+    serviceCommand: "npm start"
+    autoDeploy: true
+    envVars: []
