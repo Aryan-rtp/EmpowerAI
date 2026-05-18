@@ -52,3 +52,13 @@ const getEmployees = asyncHandler(async (req, res) => {
 });
 
 module.exports = { createEmployee, getEmployees };
+module.exports = { createEmployee, getEmployees, deleteEmployee: asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ message: "Employee id is required" });
+
+  const emp = await Employee.findById(id);
+  if (!emp) return res.status(404).json({ message: "Employee not found" });
+
+  await Employee.findByIdAndDelete(id);
+  return res.status(200).json({ message: "Employee deleted" });
+}) };

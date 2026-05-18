@@ -38,6 +38,28 @@ async function generateRecommendation(employees) {
     "aiFeedback": "short summary text"
 }\n\nRules:\n- Return ONLY valid JSON. Do not include any surrounding explanation or markdown.\n- promotionCandidates: top 3 candidates to consider for promotion with brief reason.\n- ranking: full list of employees sorted by performanceScore desc, tie-breaker experience desc.\n- trainingSuggestions: for each employee id provide 1-3 short training recommendations.\n- aiFeedback: 1-2 sentence overall recommendation for HR.\n\nEmployee data:\n${JSON.stringify(employees, null, 2)}`;
 
+    // If no AI provider key is configured, return a deterministic mock recommendation
+    if (!process.env.OPENROUTER_API_KEY && !process.env.GOOGLE_API_KEY && !process.env.GEMINI_API_KEY) {
+        // simple fallback logic: sort by performanceScore, pick top 3 for promotion
+        const sorted = Array.isArray(employees)
+            ? [...employees].sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0) || (b.experience || 0) - (a.experience || 0))
+            : [];
+        const promotionCandidates = sorted.slice(0, 3).map((e) => ({ id: e._id || e.id || null, name: e.name, reason: `Performance score ${e.performanceScore || 0}` }));
+        const ranking = sorted.map((e) => ({ id: e._id || e.id || null, name: e.name, score: e.performanceScore || 0, experience: e.experience || 0 }));
+        const trainingSuggestions = {};
+        (employees || []).forEach((e) => {
+            trainingSuggestions[e._id || e.id || e.email || e.name] = [
+                e.skills && e.skills.includes("Node.js") ? "Advanced Node.js patterns" : "Foundational training",
+            ];
+        });
+        return {
+            promotionCandidates,
+            ranking,
+            trainingSuggestions,
+            aiFeedback: "AI provider not configured in this environment — returning best-effort local recommendation.",
+        };
+    }
+
     const raw = await generateResponse(prompt);
     if (!raw) throw new Error("Failed to get recommendation from AI provider");
 

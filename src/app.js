@@ -22,15 +22,26 @@ app.get("/api/health", (req, res) => {
 	res.status(200).json({ message: "API is running" });
 });
 
+// Serve root explicitly (ensure SPA index is returned)
+app.get("/", (req, res, next) => {
+	const indexPath = path.join(publicDir, "index.html");
+	if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
+	return next();
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/diag", diagRoutes);
 
-// Serve frontend static files when deployed
+// Serve frontend static files when deployed or when `public` exists
 const path = require("path");
-if (process.env.NODE_ENV === "production" || process.env.SERVE_CLIENT === "true") {
-	const publicDir = path.join(__dirname, "..", "public");
+const fs = require("fs");
+const publicDir = path.join(__dirname, "..", "public");
+if (process.env.NODE_ENV === "production" || process.env.SERVE_CLIENT === "true" || fs.existsSync(publicDir)) {
+	console.log('Serving static from', publicDir, 'exists=', fs.existsSync(publicDir));
+	const files = fs.existsSync(publicDir) ? fs.readdirSync(publicDir) : [];
+	console.log('Public files:', files);
 	app.use(express.static(publicDir));
 	// fallback to index.html for SPA routes
 	app.use((req, res, next) => {
