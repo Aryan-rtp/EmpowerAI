@@ -31,7 +31,10 @@ if (process.env.NODE_ENV === "production" || process.env.SERVE_CLIENT === "true"
 	const publicDir = path.join(__dirname, "..", "public");
 	app.use(express.static(publicDir));
 	// fallback to index.html for SPA routes
-	app.get("*", (req, res) => {
+	app.use((req, res, next) => {
+		if (req.method !== "GET" || req.path.startsWith("/api")) {
+			return next();
+		}
 		res.sendFile(path.join(publicDir, "index.html"));
 	});
 }
