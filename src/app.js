@@ -4,6 +4,7 @@ const connectDB = require("./db/db");
 const authRoutes = require("./routes/auth.routes");
 const employeeRoutes = require("./routes/employee.routes");
 const aiRoutes = require("./routes/ai.routes");
+const diagRoutes = require("./routes/diag.routes");
 const { errorHandler } = require("./middleware/error.middleware");
 
 connectDB();
@@ -24,6 +25,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/diag", diagRoutes);
 
 // Serve frontend static files when deployed
 const path = require("path");
